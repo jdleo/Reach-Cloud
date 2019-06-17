@@ -7,19 +7,19 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onUpda
     var db = admin.firestore();
 
     //object representing the document (after change)
-    const change = change.after.data();
+    const doc = change.after.data();
 
     //status field
-    const status = change.status;
+    const status = doc.status;
 
     //parties
-    const parties = change.parties;
+    const parties = doc.parties;
 
     //check if status is 'completed'
     if (status === "completed") {
         //check if no reviews have been left yet
-        if (!(change[`review_${parties[0]}`]) && !(change[`review_${parties[1]}`])) {
-            return db.collection('socials').where('username', '==', change.username).get().then(function(snap) {
+        if (!(doc[`review_${parties[0]}`]) && !(doc[`review_${parties[1]}`])) {
+            return db.collection('socials').where('username', '==', doc.username).get().then(function(snap) {
                 //check if has orders field
                 if (snap[0].orders) {
                     //reference to current document in firestore
