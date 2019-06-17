@@ -20,29 +20,28 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onUpda
         //check if no reviews have been left yet
         if (!(doc[`review_${parties[0]}`]) && !(doc[`review_${parties[1]}`])) {
             return db.collection('socials').where('username', '==', doc.username).get().then(function(snap) {
+            	//user returned by query
+            	let user = snap.docs[0];
                 //check if has orders field
-                if (snap[0].orders) {
-                    //reference to current document in firestore
-                    let socialRef = db.collection("socials").doc(snap[0].id)
-
-                    //return promise
-                    return socialRef.set(["orders": 1], { merge: true });
-                } else {
-                    //reference to current document in firestore
-                    let socialRef = db.collection("socials").doc(snap[0].id)
+                if ("orders" in user.data()) {
+                	//reference to current document in firestore
+                    let socialRef = db.collection("socials").doc(user.id);
 
                     //orders
-                    let orders = snap[0].orders;
+                    let orders = parseInt(user.data().orders);
 
                     //return promise
-                    return socialRef.set(["orders": orders + 1], { merge: true });
+                    return socialRef.set({"orders": orders + 1}, { merge: true });
+                } else {
+                	//reference to current document in firestore
+                    let socialRef = db.collection("socials").doc(user.id)
+
+                    //return promise
+                    return socialRef.set({"orders": 1}, { merge: true });
                 }
             });
         }
     }
-
-    //complete
-    return;
 });
 
 exports.newConvo = functions.firestore.document('chats/{conversationId}').onCreate((snap, context) => {
