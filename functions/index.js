@@ -2,12 +2,14 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 admin.initializeApp(functions.config().firebase);
 
-exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onUpdate((change, context) => {
+exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onWrite((change, context) => {
+    const doc = change.after.exists ? change.after.data() : null;
+    if (!doc) {
+        return;
+    }
+
     //reference to db
     var db = admin.firestore();
-
-    //object representing the document (after change)
-    const doc = change.after.data();
 
     //status field
     const status = doc.status;
@@ -20,27 +22,98 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onUpda
         //check if no reviews have been left yet
         if (!(doc[`review_${parties[0]}`]) && !(doc[`review_${parties[1]}`])) {
             return db.collection('socials').where('username', '==', doc.username).get().then(function(snap) {
-            	//user returned by query
-            	let user = snap.docs[0];
+                //user returned by query
+                let user = snap.docs[0];
                 //check if has orders field
                 if ("orders" in user.data()) {
-                	//reference to current document in firestore
+                    //reference to current document in firestore
                     let socialRef = db.collection("socials").doc(user.id);
 
                     //orders
                     let orders = parseInt(user.data().orders);
 
+                    const payload = {
+                        notification: {
+                            title: "Order Update",
+                            body: `@${user.data().username} has marked your order as complete.`,
+                            sound: "default"
+                        }
+                    }
+
+                    const options = {
+                        priority: "high"
+                    }
+                    //send to topic
+                    let sendOff = admin.messaging().sendToTopic("order_" + user.data().sender, payload, options);
+
                     //return promise
-                    return socialRef.set({"orders": orders + 1}, { merge: true });
+                    return socialRef.set({ "orders": orders + 1 }, { merge: true });
                 } else {
-                	//reference to current document in firestore
+                    //reference to current document in firestore
                     let socialRef = db.collection("socials").doc(user.id)
 
                     //return promise
-                    return socialRef.set({"orders": 1}, { merge: true });
+                    return socialRef.set({ "orders": 1 }, { merge: true });
                 }
             });
+        } else {
+            return;
         }
+    } else if (status === "requested") {
+        const payload = {
+            notification: {
+                title: "New Order",
+                body: `A client has requested an order for @${doc.username}`,
+                sound: "default"
+            }
+        }
+        const options = {
+            priority: "high"
+        }
+        //send to topic
+        return admin.messaging().sendToTopic("order_" + doc.receiver, payload, options);
+    } else if (status === "approved") {
+        const payload = {
+            notification: {
+                title: "Order Approved",
+                body: `@${doc.username} has approved your order request. Pay for the promoted post to lock your order in!`,
+                sound: "default"
+            }
+        }
+        const options = {
+            priority: "high"
+        }
+        //send to topic
+        return admin.messaging().sendToTopic("order_" + doc.sender, payload, options);
+    } else if (status === "paid") {
+    	const payload = {
+            notification: {
+                title: "You've got money!",
+                body: `You just received a payment for ${doc.price}`,
+                sound: "default"
+            }
+        }
+        const options = {
+            priority: "high"
+        }
+        //send to topic
+        return admin.messaging().sendToTopic("order_" + doc.receiver, payload, options);
+    } else if (status === "live") {
+    	const payload = {
+            notification: {
+                title: "Post is live!",
+                body: `Your promoted post is now live on @${doc.username}`,
+                sound: "default"
+            }
+        }
+        const options = {
+            priority: "high"
+        }
+        //send to topic
+        return admin.messaging().sendToTopic("order_" + doc.sender, payload, options);
+    } else {
+    	//do nothing
+    	return;
     }
 });
 
