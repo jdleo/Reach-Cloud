@@ -1,6 +1,96 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors')({ origin: true });
 admin.initializeApp(functions.config().firebase);
+
+const app = express();
+const main = express();
+
+main.use('/api/', app);
+main.use(cors);
+main.use(bodyParser.json());
+main.use(bodyParser.urlencoded({ extended: false }));
+
+//hello world
+app.get('/v1/:username', (req, res) => {
+    //set JSON content type and CORS headers for the response
+    res.header('Content-Type', 'application/json');
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+
+    //respond to CORS preflight requests
+    if (req.method == 'OPTIONS') {
+        res.status(204).send('');
+    }
+
+    //reference to db
+    var db = admin.firestore();
+
+    let socialRef = db.collection('socials').where('username', '==', req.params.username).orderBy('price', 'desc').get().then(function(snap) {
+        if (snap) {
+            //user returned by query
+            let user = snap.docs[0];
+            if (user["_fieldsProto"]["verified"]["boolValue"] == false) {
+                res.status(404).send('The username that was found wasnt verified')
+            } else {
+                if (user) {
+                    let promoRef = db.collection("socials").doc(user.id).collection("promotionalServices").get().then(function(snap2) {
+                        if (snap2) {
+                            var resultz = []
+                            snap2.docs.forEach(function(e) {
+                                resultz.push({
+                                    "title": e["_fieldsProto"]["title"]["stringValue"],
+                                    "description": e["_fieldsProto"]["description"]["stringValue"],
+                                    "price": e["_fieldsProto"]["price"]["integerValue"]
+                                })
+                            });
+                            res.status(200).json(resultz);
+                        } else {
+                            res.status(404).send('Username not found.');
+                        }
+                    });
+                } else {
+                    res.status(404).send('Username not found.');
+                }
+            }
+        } else {
+            res.status(404).send('Username not found.');
+        }
+    });
+})
+
+exports.promoApi = functions.https.onRequest(main);
+
+exports.newMessage = functions.firestore.document('chats/{cid}').onWrite((change, context) => {
+    const doc = change.after.exists ? change.after.data() : null;
+    if (!doc) {
+        return;
+    }
+
+    var sender = "";
+
+    doc.parties.forEach(function(p) {
+        if (p != doc.receiver) {
+            sender = p;
+        }
+    });
+
+    const payload = {
+        notification: {
+            title: doc[sender],
+            body: doc.lastMessage.substring(0, 200),
+            sound: "default"
+        }
+    }
+    const options = {
+        priority: "high"
+    }
+    //send to topic
+    return admin.messaging().sendToTopic("chat_" + doc.receiver, payload, options);
+
+});
 
 exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onWrite((change, context) => {
     const doc = change.after.exists ? change.after.data() : null;
@@ -43,9 +133,6 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onWrit
                     const options = {
                         priority: "high"
                     }
-                    //send to topic
-                    let sendOff = admin.messaging().sendToTopic("order_" + user.data().sender, payload, options);
-
                     //return promise
                     return socialRef.set({ "orders": orders + 1 }, { merge: true });
                 } else {
@@ -76,7 +163,7 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onWrit
         const payload = {
             notification: {
                 title: "Order Approved",
-                body: `@${doc.username} has approved your order request. Pay for the promoted post to lock your order in!`,
+                body: `@${doc.username} has approved your order request. Pay for the post to lock your order in!`,
                 sound: "default"
             }
         }
@@ -86,10 +173,10 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onWrit
         //send to topic
         return admin.messaging().sendToTopic("order_" + doc.sender, payload, options);
     } else if (status === "paid") {
-    	const payload = {
+        const payload = {
             notification: {
                 title: "You've got money!",
-                body: `You just received a payment for ${doc.price}`,
+                body: `You've just received a payment for $${doc.price}`,
                 sound: "default"
             }
         }
@@ -99,7 +186,7 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onWrit
         //send to topic
         return admin.messaging().sendToTopic("order_" + doc.receiver, payload, options);
     } else if (status === "live") {
-    	const payload = {
+        const payload = {
             notification: {
                 title: "Post is live!",
                 body: `Your promoted post is now live on @${doc.username}`,
@@ -112,8 +199,8 @@ exports.orderUpdate = functions.firestore.document('orderTree/{orderId}').onWrit
         //send to topic
         return admin.messaging().sendToTopic("order_" + doc.sender, payload, options);
     } else {
-    	//do nothing
-    	return;
+        //do nothing
+        return;
     }
 });
 
