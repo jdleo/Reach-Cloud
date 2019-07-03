@@ -28,7 +28,7 @@ app.get('/v1/:username', (req, res) => {
     //reference to db
     var db = admin.firestore();
 
-    let socialRef = db.collection('socials').where('username', '==', req.params.username).orderBy('price', 'desc').get().then(function(snap) {
+    let socialRef = db.collection('socials').where('username', '==', req.params.username).get().then(function(snap) {
         if (snap) {
             //user returned by query
             let user = snap.docs[0];
@@ -36,7 +36,7 @@ app.get('/v1/:username', (req, res) => {
                 res.status(404).send('The username that was found wasnt verified')
             } else {
                 if (user) {
-                    let promoRef = db.collection("socials").doc(user.id).collection("promotionalServices").get().then(function(snap2) {
+                    let promoRef = db.collection("socials").doc(user.id).collection("promotionalServices").orderBy('price', 'desc').get().then(function(snap2) {
                         if (snap2) {
                             var resultz = []
                             snap2.docs.forEach(function(e) {
